@@ -1,7 +1,9 @@
 /* ==========================================================================
-   SALMAN — Módulo de Voz Cross-Browser de Salma (chat/voice.js)
-   Arquitectura In-House: Web Speech API + AudioContext Unlock + Gemini Flash
-   Compatible con Chrome, Edge, Safari iOS/macOS y navegadores móviles.
+   SALMAN — Módulo de Voz en Modo Llamada Continua (chat/voice.js)
+   Arquitectura In-House Hands-Free (Estilo Dapta / Vapi):
+   - Al tocar el botón inicia una llamada en vivo.
+   - Salma habla y, al terminar de hablar, abre automáticamente el micrófono.
+   - La conversación continúa de forma fluida y natural sin tener que tocar la pantalla.
    ========================================================================== */
 (() => {
   'use strict';
@@ -10,7 +12,6 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
 
-  // AudioContext global para desbloqueo de Autoplay en Safari iOS/macOS
   let sharedAudioContext = null;
   let isAudioUnlocked = false;
 
@@ -26,13 +27,12 @@
     LANG_FALLBACK.es;
 
   /* --------------------------------------------------------------------------
-     1. Desbloqueo Crítico de AudioContext & Autoplay (Gesto de Usuario síncrono)
+     1. Desbloqueo Crítico de AudioContext & Autoplay en el primer toque
      -------------------------------------------------------------------------- */
   function unlockBrowserAudio() {
     if (isAudioUnlocked) return;
 
     try {
-      // 1. Desbloqueo de AudioContext (Web Audio API)
       const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       if (AudioCtxClass) {
         if (!sharedAudioContext) {
@@ -41,7 +41,6 @@
         if (sharedAudioContext.state === 'suspended') {
           sharedAudioContext.resume().catch(() => {});
         }
-        // Reproducir micro-buffer mudo de 1 sample (esencial para Safari iOS)
         const buffer = sharedAudioContext.createBuffer(1, 1, 22050);
         const source = sharedAudioContext.createBufferSource();
         source.buffer = buffer;
@@ -49,24 +48,21 @@
         source.start(0);
       }
 
-      // 2. Desbloqueo de SpeechSynthesis
       if (synth) {
         synth.cancel();
         if (synth.paused) synth.resume();
-        // Emisión de micro-utterance silencioso para ganar el permiso permanente de voz en Chromium/WebKit
-        const dummyUtterance = new SpeechSynthesisUtterance('');
-        dummyUtterance.volume = 0;
+        const dummyUtterance = new SpeechSynthesisUtterance(' ');
+        dummyUtterance.volume = 0.01;
         synth.speak(dummyUtterance);
       }
 
       isAudioUnlocked = true;
-      console.log('[Salma Voice] AudioContext & SpeechSynthesis desbloqueados exitosamente.');
+      console.log('[Salma Call] AudioContext y síntesis desbloqueados para modo llamada.');
     } catch (e) {
-      console.warn('[Salma Voice] Advertencia en unlockBrowserAudio:', e);
+      console.warn('[Salma Call] Error en unlockBrowserAudio:', e);
     }
   }
 
-  // Vincular eventos tempranos del usuario para garantizar desbloqueo en primera interacción
   if (typeof window !== 'undefined') {
     const earlyUnlockEvents = ['click', 'touchstart', 'touchend'];
     const earlyUnlockHandler = () => {
@@ -77,7 +73,7 @@
   }
 
   /* --------------------------------------------------------------------------
-     2. Precarga y Selección Inteligente de Voces Naturales
+     2. Selector de Voces Neurales / Naturales de Alta Calidad
      -------------------------------------------------------------------------- */
   let cachedVoices = [];
   let activeUtterance = null;
@@ -120,9 +116,12 @@
     const candidates = strictlyFemale.length > 0 ? strictlyFemale : (nonMalePool.length > 0 ? nonMalePool : effectivePool);
 
     if (isEs) {
-      // 1. Salma Online Natural (Microsoft Edge / Windows)
-      const salmaVoice = candidates.find((v) => /salma/i.test(v.name));
+      // 1. Prioridad: Microsoft Salma Online (Natural) - Colombia
+      const salmaVoice = candidates.find((v) => /salma/i.test(v.name) && /colombia|es-co/i.test(v.name + (v.lang || '')));
       if (salmaVoice) return salmaVoice;
+
+      const anySalma = candidates.find((v) => /salma/i.test(v.name));
+      if (anySalma) return anySalma;
 
       // 2. Voces Colombianas / Latinoamericanas Naturales
       const latinNatural = candidates.find((v) =>
@@ -131,11 +130,11 @@
       );
       if (latinNatural) return latinNatural;
 
-      // 3. Voces de Google (Android / Chrome)
+      // 3. Voces Google (Android / Chrome)
       const googleFemale = candidates.find((v) => /google/i.test(v.name) && !maleRegex.test(v.name));
       if (googleFemale) return googleFemale;
 
-      // 4. Sabina o estándar femenino
+      // 4. Sabina u otras estándar
       const standardFemale = candidates.find((v) => /sabina|paulina|monica|helena|elena/i.test(v.name));
       if (standardFemale) return standardFemale;
 
@@ -150,18 +149,11 @@
   }
 
   /* --------------------------------------------------------------------------
-     3. Controlador Principal de Voz y Estados Visuales
+     3. Controlador Principal de Llamada Continua (Hands-Free Call Loop)
      -------------------------------------------------------------------------- */
   function createVoiceController(ctx) {
     const { chat, el, t, track, addUser, addBot, route } = ctx;
 
-    /**
-     * Gestión estricta y elegante de los 4 estados visuales:
-     * - 'inactive': en reposo
-     * - 'listening': escuchando al usuario
-     * - 'processing': Gemini Flash procesando respuesta
-     * - 'speaking': Salma leyendo en voz alta
-     */
     function setState(state, statusText = '') {
       chat.voiceState = state; // 'inactive' | 'listening' | 'processing' | 'speaking'
       chat.listening = state === 'listening';
@@ -170,49 +162,48 @@
 
       if (!el.voice) return;
 
-      // Actualizar clases CSS del Orbe
+      // Animaciones de orbe
       el.orb?.classList.toggle('is-listening', state === 'listening');
       el.orb?.classList.toggle('is-processing', state === 'processing');
       el.orb?.classList.toggle('is-speaking', state === 'speaking');
 
-      // Actualizar texto de estado
+      // Texto de estado dinámico estilo llamada
       if (el.voiceStatus) {
         if (statusText) {
           el.voiceStatus.textContent = statusText;
         } else {
           switch (state) {
             case 'listening':
-              el.voiceStatus.textContent = t('chat.listening') || 'Escuchando tu voz…';
+              el.voiceStatus.textContent = chat.lang === 'es' ? 'Te escucho… (habla con confianza)' : 'Listening to you…';
               break;
             case 'processing':
               el.voiceStatus.textContent = chat.lang === 'es' ? 'Salma está pensando…' : 'Salma is thinking…';
               break;
             case 'speaking':
-              el.voiceStatus.textContent = chat.lang === 'es' ? 'Salma está hablando… (toca para pausar)' : 'Salma is speaking… (tap to interrupt)';
+              el.voiceStatus.textContent = chat.lang === 'es' ? 'Salma está hablando…' : 'Salma is speaking…';
               break;
             case 'inactive':
             default:
-              el.voiceStatus.textContent = t('voice.tap') || 'Toca el micrófono y habla. Puedes interrumpirme cuando quieras.';
+              el.voiceStatus.textContent = chat.lang === 'es' ? 'Llamada conectada · Salma te escucha' : 'Call connected · Salma is listening';
               break;
           }
         }
       }
 
-      // Actualizar botón de acción principal de voz
+      // Botón principal de llamada
       if (el.voiceListen) {
-        const isStopAction = state === 'listening' || state === 'speaking';
-        const buttonText = isStopAction
-          ? (chat.lang === 'es' ? 'Detener' : 'Stop')
-          : (state === 'processing'
-              ? (chat.lang === 'es' ? 'Pensando…' : 'Thinking…')
-              : (t('voice.speak') || 'Hablar con Salma'));
-
-        const iconHref = isStopAction ? '#i-pause' : '#i-mic';
-        el.voiceListen.innerHTML = `
-          <svg class="icon" aria-hidden="true"><use href="${iconHref}"></use></svg>
-          <span>${buttonText}</span>
-        `;
-        el.voiceListen.disabled = (state === 'processing');
+        if (chat.voiceOpen) {
+          el.voiceListen.innerHTML = `
+            <svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg>
+            <span>${chat.lang === 'es' ? 'Finalizar llamada' : 'End call'}</span>
+          `;
+          el.voiceListen.disabled = false;
+        } else {
+          el.voiceListen.innerHTML = `
+            <svg class="icon" aria-hidden="true"><use href="#i-mic"></use></svg>
+            <span>${t('voice.speak') || 'Llamar a Salma'}</span>
+          `;
+        }
       }
     }
 
@@ -228,7 +219,7 @@
     }
 
     /**
-     * Síntesis de voz (TTS) con retención de Garbage Collection y Keep-Alive
+     * Síntesis de voz (TTS) con reapertura automática de micrófono al terminar
      */
     function speak(text) {
       if (!synth || chat.muted) return;
@@ -257,16 +248,19 @@
       window._salmaActiveUtterance = utterance;
 
       const voice = selectBestVoice(chat.lang);
-      if (voice) utterance.voice = voice;
+      if (voice) {
+        utterance.voice = voice;
+        console.log('[Salma Voice] Voz seleccionada:', voice.name, '| lang:', voice.lang);
+      }
 
       const meta = getLangMeta(chat.lang);
       utterance.lang = meta.tts || (chat.lang === 'es' ? 'es-CO' : 'en-US');
-      utterance.rate = 0.98;
-      utterance.pitch = 1.02;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
 
       setState('speaking', clean.slice(0, 240) + (clean.length > 240 ? '…' : ''));
 
-      // Keep-Alive para evitar que Chromium pause síntesis largas a los 14 segundos
+      // Keep-Alive para Chromium
       keepAliveTimer = setInterval(() => {
         if (!synth.speaking) {
           clearInterval(keepAliveTimer);
@@ -276,11 +270,22 @@
         }
       }, 9000);
 
+      // EVENTO CRÍTICO: Cuando Salma termina de hablar, se abre automáticamente el micrófono (Hands-Free)
       utterance.onend = () => {
         if (keepAliveTimer) clearInterval(keepAliveTimer);
         activeUtterance = null;
         window._salmaActiveUtterance = null;
-        setState('inactive');
+
+        if (chat.voiceOpen) {
+          console.log('[Salma Call Loop] Salma terminó de hablar. Abriendo micrófono automáticamente...');
+          setTimeout(() => {
+            if (chat.voiceOpen && !chat.speaking) {
+              startListening();
+            }
+          }, 350);
+        } else {
+          setState('inactive');
+        }
       };
 
       utterance.onerror = (e) => {
@@ -288,7 +293,13 @@
         activeUtterance = null;
         window._salmaActiveUtterance = null;
         console.warn('[Salma Voice TTS Warning]:', e.error || e);
-        setState('inactive');
+        if (chat.voiceOpen) {
+          setTimeout(() => {
+            if (chat.voiceOpen && !chat.speaking) startListening();
+          }, 400);
+        } else {
+          setState('inactive');
+        }
       };
 
       setTimeout(() => {
@@ -313,16 +324,12 @@
       if (synth) {
         try { synth.cancel(); } catch (_) {}
       }
-      setState('inactive');
+      chat.speaking = false;
     }
 
-    /**
-     * Solicitud y verificación limpia de hardware de micrófono
-     */
     async function requestHardwareMic() {
       unlockBrowserAudio();
 
-      // 1. Permiso previo concedido en Permissions API
       if (navigator.permissions && navigator.permissions.query) {
         try {
           const perm = await navigator.permissions.query({ name: 'microphone' });
@@ -331,7 +338,6 @@
         } catch (_) {}
       }
 
-      // 2. getUserMedia con liberación adecuada
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -339,7 +345,7 @@
           await new Promise((r) => setTimeout(r, 120));
           return true;
         } catch (permErr) {
-          console.warn('[Salma Voice] Permiso de micrófono no otorgado:', permErr);
+          console.warn('[Salma Call] Permiso de micrófono no otorgado:', permErr);
           return false;
         }
       }
@@ -347,30 +353,27 @@
     }
 
     /**
-     * Inicia captura y reconocimiento de voz (STT)
+     * Inicia captura y escucha continua
      */
     async function startListening() {
+      if (!chat.voiceOpen) return;
       unlockBrowserAudio();
 
       if (!SR) {
-        addBot(t('chat.voiceUnsupported') || 'Tu navegador no soporta entrada de voz. Puedes escribir tu mensaje.', {
-          speak: false,
-          chips: ['advisor', 'projects']
-        });
+        addBot(t('chat.voiceUnsupported') || 'Navegador sin soporte de voz. Puedes escribir.', { speak: false });
         return;
       }
 
-      if (chat.listening || !chat.voiceOpen) return;
-      stopSpeech();
+      if (chat.listening || chat.speaking) return;
 
       chat.voiceFinal = '';
       if (el.voiceTranscript) el.voiceTranscript.textContent = '';
 
-      setState('listening', t('chat.listening') || 'Escuchando tu voz…');
+      setState('listening', chat.lang === 'es' ? 'Te escucho… (habla libremente)' : 'Listening to you…');
 
       const micGranted = await requestHardwareMic();
       if (!micGranted) {
-        setState('inactive', t('chat.micDenied') || 'Permiso de micrófono denegado. Habilítalo en tu navegador.');
+        setState('inactive', t('chat.micDenied') || 'Permiso de micrófono bloqueado.');
         return;
       }
 
@@ -404,19 +407,24 @@
 
         recognition.onerror = (event) => {
           const errCode = event.error || 'unknown';
-          console.warn('[Salma Voice STT Error]:', errCode);
+          console.warn('[Salma Call STT Event]:', errCode);
 
-          if (errCode === 'not-allowed' || errCode === 'service-not-allowed') {
-            setState('inactive', t('chat.micDenied') || 'Permiso de micrófono bloqueado.');
-            track('chat_voice_error', { error: errCode });
+          if (errCode === 'not-allowed') {
+            setState('inactive', t('chat.micDenied'));
           } else if (errCode === 'no-speech') {
-            setState('inactive', chat.lang === 'es' ? 'No escuché tu voz. Toca para intentar de nuevo.' : 'I did not catch that. Tap to try again.');
-          } else {
-            setState('inactive', chat.lang === 'es' ? 'Conexión de voz interrumpida. Intenta nuevamente.' : 'Voice connection interrupted. Please try again.');
+            // Silencio temporal: en modo llamada, volver a escuchar suavemente
+            if (chat.voiceOpen && !chat.speaking && !chat.processing) {
+              setTimeout(() => {
+                if (chat.voiceOpen && !chat.speaking && !chat.processing) {
+                  startListening();
+                }
+              }, 400);
+            }
           }
         };
 
         recognition.onend = () => {
+          chat.listening = false;
           if (!chat.voiceOpen) {
             setState('inactive');
             return;
@@ -427,7 +435,7 @@
             addUser(text);
             setState('processing');
 
-            // Envío al backend de Gemini Flash
+            // Consultar a Gemini Flash
             route(text, {
               speak: true,
               fast: true,
@@ -438,19 +446,26 @@
                 }
               },
               onError: () => {
-                setState('inactive');
+                if (chat.voiceOpen) startListening();
               }
             });
           } else {
-            setState('inactive');
+            // Si no hubo texto detectado (pausa del usuario), reiniciar escucha continua en la llamada
+            if (chat.voiceOpen && !chat.speaking && !chat.processing) {
+              setTimeout(() => {
+                if (chat.voiceOpen && !chat.speaking && !chat.processing && !chat.listening) {
+                  startListening();
+                }
+              }, 400);
+            }
           }
         };
 
         recognition.start();
         track('chat_voice_start');
       } catch (err) {
-        console.error('[Salma Voice Start Error]:', err);
-        setState('inactive', t('chat.micDenied'));
+        console.error('[Salma Call Start Error]:', err);
+        chat.listening = false;
       }
     }
 
@@ -458,9 +473,12 @@
       if (chat.recognition) {
         try { chat.recognition.abort(); } catch (_) {}
       }
-      setState('inactive');
+      chat.listening = false;
     }
 
+    /**
+     * Inicia la llamada con Salma (Llamada en Vivo)
+     */
     function openVoice() {
       unlockBrowserAudio();
       refreshVoices();
@@ -475,8 +493,12 @@
 
       setState('speaking', greeting);
       speak(greeting);
+      // Nota: Al terminar speak(greeting), su evento utterance.onend llama automáticamente a startListening()
     }
 
+    /**
+     * Cuelga la llamada
+     */
     function closeVoice() {
       chat.voiceOpen = false;
       stopListening();
@@ -484,6 +506,7 @@
       if (el.voice) el.voice.hidden = true;
       setState('inactive');
       if (chat.open && el.text) el.text.focus();
+      track('chat_call_ended');
     }
 
     return {
