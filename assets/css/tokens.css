@@ -1,0 +1,30 @@
+/* ==========================================================================
+   SALMAN — Variables y tokens de diseño (css/tokens.css)
+   Tipografía editorial + paleta Caribe: papel, verde profundo, latón.
+   ========================================================================== */
+
+:root{
+  --cream:#F2EEE4;
+  --cream-2:#EAE4D6;
+  --paper:#F7F4EC;
+  --white:#FCFBF7;
+  --green:#0E2C25;
+  --green-2:#153A31;
+  --ink:#0B1A16;
+  --stone:#6E6B62;
+  --stone-2:#77736A;
+  --gold:#B08D57;
+  --gold-ink:#8A6A3C;
+  --gold-light:#D8BE94;
+  --gold-pale:#E8D9BD;
+  --line:rgba(11,26,22,.14);
+  --line-light:rgba(242,238,228,.16);
+  --shadow:0 24px 60px -24px rgba(11,26,22,.35);
+  --shadow-sm:0 10px 30px -18px rgba(11,26,22,.4);
+  --serif:"Cormorant Garamond",Georgia,"Times New Roman",serif;
+  --sans:"Jost",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --ease:cubic-bezier(.22,.7,.2,1);
+  --header-h:88px;
+  --gutter:clamp(20px,4vw,48px);
+  --radius:2px;
+}

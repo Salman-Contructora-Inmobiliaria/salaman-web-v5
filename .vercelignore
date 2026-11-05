@@ -1,0 +1,10 @@
+# Documentos internos y archivos pesados: no se suben al bundle de Vercel
+propuesta/
+README.md
+DEPLOY.md
+start-demo.cmd
+*.md
+.env*
+scripts/
+*.pdf
+*.png

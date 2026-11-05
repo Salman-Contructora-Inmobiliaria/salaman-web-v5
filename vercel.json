@@ -1,0 +1,25 @@
+{
+  "name": "salaman-web-v5",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    }
+  ],
+  "redirects": [
+    { "source": "/wa", "destination": "https://wa.me/573244286166", "permanent": false },
+    {
+      "source": "/asesor",
+      "destination": "https://wa.me/573244286166?text=Hola%20SALMAN%2C%20vengo%20de%20la%20web.%20Quiero%20hablar%20con%20un%20asesor.",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/salma-voice", "destination": "/api/salma-chat" },
+    { "source": "/api/chat", "destination": "/api/salma-chat" },
+    { "source": "/api/meta-whatsapp", "destination": "/api/whatsapp" }
+  ]
+}
